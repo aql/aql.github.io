@@ -14,7 +14,7 @@ h1 {
     font-family: skia;
     vertical-align: text-bottom;
     background-color: black;
-    background-image: url(http://hikoboshi.org/images/heading1.png);
+    background-image: url(/images/heading1.png);
     background-position: left;
     text-shadow: #999999 0px 0px 10px;
 }
