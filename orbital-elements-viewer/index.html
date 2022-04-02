@@ -148,12 +148,11 @@ body {
       </div>
     </div>
   </div>
-  <!-- <script src="https://unpkg.com/vue@3"></script> -->
   <script src="https://unpkg.com/vue@3.2.31/dist/vue.global.prod.js"></script>
   <script src="https://unpkg.com/three@0.138.3/build/three.js"></script>
   <script src="https://unpkg.com/three@0.138.3/examples/js/controls/OrbitControls.js"></script>
-  <script type="module">
-const { createApp, ref, onMounted } = Vue
+  <script>
+const { createApp, ref, computed, onMounted } = Vue
 createApp({
   setup() {
     const solarRadius = ref(3)
@@ -176,6 +175,10 @@ createApp({
     // # WebGL Rendering Objects
     // scene
     const scene = new THREE.Scene()
+
+    const light = new THREE.DirectionalLight(0xffffff, 1)
+    light.position.set(0, 0, 1)
+    scene.add(light)
 
     // axis
     scene.add(new THREE.Line(
@@ -201,7 +204,7 @@ createApp({
     ))
     scene.add(new THREE.Mesh(
       new THREE.PlaneGeometry(f.value * 2, f.value * 2, 1, 1),
-      new THREE.MeshBasicMaterial({color: 0x303030, transparent: true, opacity: 0.1})
+      new THREE.MeshLambertMaterial({color: 0x303030, transparent: true, opacity: 0.1})
     ))
 
     // orbit
@@ -232,6 +235,7 @@ createApp({
     }
     updateOrbit()
 
+    // additional lines
     const nodeLine = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0),
@@ -259,6 +263,42 @@ createApp({
     )
     scene.add(periLine)
 
+    // additional plane
+    const orbitalPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(f.value * 2, f.value * 2, 1, 1),
+      new THREE.MeshLambertMaterial({color: 0x0000cc, transparent: true, opacity: 0.1})
+    )
+    scene.add(orbitalPlane)
+
+    // orbit quaternion
+    const orbitQuaternion = computed(() => {
+      const q = new THREE.Quaternion()
+
+      const qn = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1),
+        (node.value / 180) * Math.PI
+      )
+      q.multiply(qn)
+      nodeLine.quaternion.set(q.x, q.y, q.z, q.w)
+
+      const qi = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0),
+        (incl.value / 180) * Math.PI
+      )
+      q.multiply(qi)
+      inclLine.quaternion.set(q.x, q.y, q.z, q.w)
+      orbitalPlane.quaternion.set(q.x, q.y, q.z, q.w)
+
+      const qp = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1),
+        (peri.value / 180) * Math.PI
+      )
+      q.multiply(qp)
+      periLine.quaternion.set(q.x, q.y, q.z, q.w)
+
+      return q
+    })
+
     // camera
     const aspect = width.value / height.value
 
@@ -274,7 +314,7 @@ createApp({
     oCam.position.set(0, 0, z.value)
     scene.add(oCam)
 
-    // control
+    // camera changer
     let updatePerspective = ref(() => {})
 
     onMounted(() => {
@@ -286,39 +326,18 @@ createApp({
       elem.appendChild(renderer.domElement)
 
       // control
-      let control = new THREE.OrbitControls(usePerspective.value ? pCam : oCam, elem)
+      let control
       updatePerspective.value = () => {
         if (control) { control.dispose() }
         control = new THREE.OrbitControls(usePerspective.value ? pCam : oCam, elem)
       }
+      updatePerspective.value()
 
       // render flame
       const renderFrame = () => {
         requestAnimationFrame(renderFrame)
 
-        const q = new THREE.Quaternion()
-
-        const qn = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 0, 1),
-          (node.value / 180) * Math.PI
-        )
-        q.multiply(qn)
-        nodeLine.quaternion.set(q.x, q.y, q.z, q.w)
-
-        const qi = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(1, 0, 0),
-          (incl.value / 180) * Math.PI
-        )
-        q.multiply(qi)
-        inclLine.quaternion.set(q.x, q.y, q.z, q.w)
-
-        const qp = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 0, 1),
-          (peri.value / 180) * Math.PI
-        )
-        q.multiply(qp)
-        periLine.quaternion.set(q.x, q.y, q.z, q.w)
-
+        const q = orbitQuaternion.value
         orbit.quaternion.set(q.x, q.y, q.z, q.w)
 
         renderer.render(scene, usePerspective.value ? pCam : oCam)
