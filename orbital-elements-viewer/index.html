@@ -116,19 +116,26 @@ body {
       </div>
     </div>
     <div id="controller">
-      <div for="a" style="display:flex">
+      <div for="e" style="display:flex">
         <div style="flex:1">軌道長半径<span class="hide-small-display">(a)</span></div>
         <div style="width:4em">
-          <input v-model="a" type="number" step="0.1" min="0.1" @change="updateOrbit">
+          <input v-if="e < 1.0" v-model="a" type="number" step="0.1" min="0.1" :disabled="1.0 <= e" />
+          <input v-else value="使用不可" :disabled="1.0 <= e" style="width:4em" />
+        </div>
+      </div>
+      <div for="a" style="display:flex">
+        <div style="flex:1">近点距離<span class="hide-small-display">(q)</span></div>
+        <div style="width:4em">
+          <input v-model="q" type="number" step="0.1" min="0.1" />
         </div>
       </div>
       <div for="e" style="display:flex">
         <div style="flex:1">離心率<span class="hide-small-display">(e)</span></div>
         <div style="width:4em">
-          <input v-model="e" type="number" step="0.01" max="0.99" min="0.00" @change="updateOrbit">
+          <input v-model="e" type="number" step="0.01" max="0.99" min="0.00">
         </div>
       </div>
-      <div for="i" style="display:flex">
+      <div for="W" style="display:flex">
         <div style="flex:1">近点引数<span class="hide-small-display">(peri)</span></div>
         <div style="width:4em">
           <input v-model="peri" type="number" step="1.0" min="0.0" max="360.0">
@@ -140,11 +147,14 @@ body {
           <input v-model="incl" type="number" step="1.0" min="0.0" max="180.0">
         </div>
       </div>
-      <div for="W" style="display:flex">
+      <div for="w" style="display:flex">
         <div style="flex:1">昇交点黄経<span class="hide-small-display">(node)</span></div>
         <div style="width:4em">
           <input v-model="node" type="number" step="1.0" min="0.0" max="360.0">
         </div>
+      </div>
+      <div style="display:flax">
+        <a style="font-size:x-small" href="https://hikoboshi.org/orbital-elements-viewer/orbital-elements-three.html">離心率制限なし（WebGL）</a>
       </div>
     </div>
   </div>
@@ -153,17 +163,29 @@ body {
   <script src="https://unpkg.com/three@0.138.3/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.meshline/1.4.0/THREE.MeshLine.min.js" integrity="sha512-xcjV55ij0+bQJJ2I8yazZ4EqX5xQ2jSePFtzuCFrw6rmTTuRngsTQFLyopwcRrTZ4oWxGW6zeuMKMgLWoT9bIw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
-const { createApp, ref, computed, onMounted } = Vue
+const { createApp, ref, computed, watch, onMounted } = Vue
 createApp({
   setup() {
     const solarRadius = ref(3)
     const solarColor  = ref('#ff0')
-    const a      = ref(1.0)
+    // const a      = ref(1.0)
+    const q      = ref(0.2)
     const e      = ref(0.8)
     const peri   = ref(0.0)
     const incl   = ref(0.0)
     const node   = ref(0.0)
     const f      = ref(150)
+
+    const a = computed({
+      get: () => {
+        if (1.0 <= e.value) { return }
+        return q.value / (1 - e.value)
+      },
+      set: (a) => {
+        if (1.0 <= e.value) { return }
+        q.value = a * (1 - e.value)
+      }
+    })
 
     const usePerspective = ref(true)
 
@@ -177,9 +199,13 @@ createApp({
     // scene
     const scene = new THREE.Scene()
 
+    // light
     const light = new THREE.DirectionalLight(0xffffff, 1)
     light.position.set(0, 0, 1)
     scene.add(light)
+
+    const ambient = new THREE.AmbientLight(0x909090)
+    scene.add(ambient);
 
     // axis
     scene.add(new THREE.Line(
@@ -209,66 +235,6 @@ createApp({
     )
     plane.position.set(0, 0, 0.000001)
     scene.add(plane)
-
-    // orbit
-    const makeOrbit = () => {
-      const sz = 1000
-      const points = []
-      let prev
-      for (let i = 0; i <= sz; i++) {
-        const t = 2 * Math.PI * (i / sz)
-        const r = a.value * (1 - Math.pow(e.value, 2)) / (1 + e.value * Math.cos(t))
-        const x = f.value * r * Math.cos(t)
-        const y = f.value * r * Math.sin(t)
-        const p = new THREE.Vector3(x, y, 0)
-        if (prev) {
-          const d = prev.distanceTo(p)
-          if (d < 1) {
-            continue
-          }
-        }
-
-        points.push(p)
-        prev = p
-      }
-      points.push(points[0])
-
-      const curve = new THREE.CatmullRomCurve3(points)
-      const geom = new MeshLine()
-      geom.setPoints(curve.getPoints(1000))
-      const orbit = new THREE.Mesh(
-        geom,
-        new MeshLineMaterial({
-          transparent: true,
-          lineWidth: 1,
-          opacity: 0.9,
-          color: 0xffffff,
-          dashArray: 2,
-          dashOffset: 0,
-          dashRatio: 0.5,
-        })
-      )
-
-      orbit.add(new THREE.Mesh(
-        geom,
-        new MeshLineMaterial({
-          transparent: true,
-          opacity: 0.1,
-          lineWidth: 0.8,
-          color: 0xffffff,
-        })
-      ))
-
-      return orbit
-    }
-
-    let orbit
-    const updateOrbit = () => {
-      if (orbit) { scene.remove(orbit) }
-      orbit = makeOrbit()
-      scene.add(orbit)
-    }
-    updateOrbit()
 
     // additional lines
     const nodeLine = new THREE.Line(
@@ -305,8 +271,59 @@ createApp({
     )
     scene.add(orbitalPlane)
 
-    // orbit quaternion
-    const orbitQuaternion = computed(() => {
+    // orbit
+    const orbit = new THREE.Group()
+    scene.add(orbit)
+
+    const getOrbitalPoint = (t) => {
+      const l = e.value == 1.0 ? q.value * 2 : 1 - Math.pow(e.value, 2)
+      const r = (e.value == 1.0 ? 1.0 : q.value / ( 1 - e.value )) * l / (1 + e.value * Math.cos(t))
+      const x = f.value * r * Math.cos(t)
+      const y = f.value * r * Math.sin(t)
+      return new THREE.Vector3(x, y, 0)
+    }
+
+    const updateOrbit = () => {
+      if (0 < orbit.children.length) {
+        for (let child of orbit.children) {
+          orbit.remove(child)
+        }
+      }
+
+      const sz = 1000
+      const points = []
+      const nearest = getOrbitalPoint(0)
+      const o = new THREE.Vector3(0, 0, 0)
+      let prev
+      for (let i = 0; i <= sz; i++) {
+        const p = getOrbitalPoint((2 * i / sz - 1 ) * Math.PI)
+        if (nearest.x < p.x) { continue }
+        if (1000 < p.distanceTo(o)) { continue }
+        if (prev && prev.distanceTo(p) < 5) { continue }
+
+        points.push(p)
+        prev = p
+      }
+
+      const curve = new THREE.CatmullRomCurve3(points)
+      const geom = new MeshLine()
+      geom.setPoints(curve.getPoints(1000))
+
+      orbit.add(new THREE.Mesh(
+        geom,
+        new MeshLineMaterial({
+          lineWidth: 2.0,
+          color: 0x303030,
+          dashArray: 0.05,
+          dashOffset: 0,
+          dashRatio: 0.5,
+        })
+      ))
+    }
+    updateOrbit()
+
+    watch([q, e], updateOrbit)
+    watch([node, incl, peri], () => {
       const q = new THREE.Quaternion()
 
       const qn = new THREE.Quaternion().setFromAxisAngle(
@@ -331,7 +348,7 @@ createApp({
       q.multiply(qp)
       periLine.quaternion.set(q.x, q.y, q.z, q.w)
 
-      return q
+      orbit.quaternion.set(q.x, q.y, q.z, q.w)
     })
 
     // camera
@@ -372,9 +389,9 @@ createApp({
       const renderFrame = () => {
         requestAnimationFrame(renderFrame)
 
-        const q = orbitQuaternion.value
-        orbit.quaternion.set(q.x, q.y, q.z, q.w)
-        orbit.material.uniforms.dashOffset.value -= 0.005
+        for (let child of orbit.children){
+          child.material.uniforms.dashOffset.value -= 0.001
+        }
 
         renderer.render(scene, usePerspective.value ? pCam : oCam)
       }
@@ -404,9 +421,8 @@ createApp({
 
     return {
       solarRadius, solarColor,
-      a, e, peri, incl, node, f,
+      a, q, e, peri, incl, node, f,
       width, height,
-      updateOrbit,
       usePerspective, updatePerspective
     }
   }
